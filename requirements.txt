@@ -1,0 +1,9 @@
+nltk
+datasets
+wordfreq
+scikit-network
+scipy
+numpy
+torch
+spacy==2.3.5
+sentence-transformers

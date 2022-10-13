@@ -2,7 +2,6 @@ import os, time
 import numpy as np
 from tqdm import tqdm
 from helpers import load_data
-from sklearn import metrics
 from utils import load_pickle, write_pickle
 
 class Cluster(object):
