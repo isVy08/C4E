@@ -44,7 +44,7 @@ class Cluster(object):
 
   def extract_relations(self):  
     events_dict = {event: i for i, event in enumerate(self.events)}
-     
+    
     nc = len(self.collector)
     
     # how many times a member of cluster i is a cause of any member of cluster j
@@ -53,30 +53,22 @@ class Cluster(object):
     for cluster_id, cl in self.collector.items():
       nm = len(cl)
       for event_id in cl:
-        event = self.events[event_id]
-        if event in self.cause_effect:
-          causes = self.cause_effect[event]
-          for cau_event in causes:
-            try:
-              cau_event_id = events_dict[cau_event]
-              if cau_event_id < nc:
-                # find parent cluster
-                parent_cluster_id = self.cluster[cau_event_id]
-                if parent_cluster_id < nc:
-                  M[parent_cluster_id, cluster_id] += 1
-            except KeyError:
-              pass
+        if event_id in self.cause_effect_id:
+          causes = self.cause_effect_id[event_id]
+          for cau_event_id in causes:
+            parent_cluster_id = self.cluster[cau_event_id]
+            M[parent_cluster_id, cluster_id] += 1
       
     return M
   
-  def evaluate(self, cluster):
-    n_clusters = cluster.max() + 1
-    M = self.extract_relations(cluster)
+  def evaluate(self):
+    n_clusters = self.cluster.max() + 1
+    M = self.extract_relations()
     arr = [len(cl) for _, cl in self.collector.items()]
     diag_ = M.diagonal() // 2
     inner = np.divide(diag_, arr).mean()
     sparsity, outer = self.relation_quality(M)
-    balance = max(arr) / cluster.shape[0]
+    balance = max(arr) / self.cluster.shape[0]
     return n_clusters, sparsity, outer, inner, balance
 
   def relation_quality(self, M):
