@@ -22,6 +22,7 @@ cluster_manager = Cluster(path='glucose.db', raw=False)
 
 `run_faiss.py` obtains SBERT sentence embeddings and find top *k* nearest neighbors using [FAISS](https://github.com/facebookresearch/faiss).
 Note that FAISS computes Euclidean distance. It returns neigboring indices and corresponding distances for each instance in Numpy matrices. 
+Refer to their Github page for instructions on installation. 
 
 `helpers.py` provides code for extracting pairwse (1) string similarity IoU and (2) paraphrasing probability from [paraphrase detection model](https://huggingface.co/coderpotter/adversarial-paraphrasing-detector).  
 
