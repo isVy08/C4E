@@ -160,7 +160,7 @@ def pairwise_iou(events,
 def weight_edges(db, alpha, beta, cause_effect_id, penalty = 0):
     '''
     generate edge weights for the adjacency matrix
-    db : dict of pairwise scores, for example (0, 1202) : {'pp': 0.80, 'iou' : 0.5, 'dist': 1.0} 
+    db : dict of pairwise scores, for example (0, 1202) : {'phr': 0.80, 'iou' : 0.5, 'dist': 1.0} 
     where pp is paraphrase likelihood, iou is IoU, dist is the Euclidean distance
     '''
     row = []
@@ -174,7 +174,7 @@ def weight_edges(db, alpha, beta, cause_effect_id, penalty = 0):
             s = penalty
         else:
             euclidean_sim = 1 / (1 + v['dist'])
-            s = alpha * v['pp'] + beta * v['iou'] + (1 - alpha - beta) * euclidean_sim
+            s = alpha * v['phr'] + beta * v['iou'] + (1 - alpha - beta) * euclidean_sim
 
         row.append(x)
         row.append(y)
