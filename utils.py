@@ -1,4 +1,4 @@
-import torch, json, pickle
+import json, pickle
 
 class Namespace:
   def __init__(self, **kwargs):
@@ -40,10 +40,4 @@ def load_json(datadir):
 def write_json(data, savedir):
     with open(savedir, 'w') as file:
         json.dump(data, file, indent=4)
-
-def load_model(model, optimizer, model_path, device):
-    checkpoint = torch.load(model_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-    if optimizer:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+å

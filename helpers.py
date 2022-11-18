@@ -1,49 +1,17 @@
-import itertools
 import numpy as np
-import os, torch, scipy
 from tqdm import tqdm
-from utils import load, load_pickle, write_pickle
+import scipy, os, torch
 
 
-def load_data(raw=True, path='glucose.db'):
-
-  def clean_single_event(ev):
-    tokens = ev.lower().split(' ')
-    tokens = [tok for tok in tokens if 'some' not in tok]
-    ev = ' '.join(tokens)
-    return ev
-
-
-  def clean_events(events):
-    clean_events = []
-    for ev in events: 
-      ev = clean_single_event(ev)
-      clean_events.append(ev)
-    return clean_events
-
-  events, cause_effect, event_loc = load_pickle(path)
-  # stories = list(itertools.chain(*event_loc.values()))
-  if not raw: 
-    events = clean_events(events)
-    clean_cause_effect = {}
-    for k, v in tqdm(cause_effect.items()):
-      k = clean_single_event(k)
-      if k not in clean_cause_effect:
-        clean_cause_effect[k] = set()
-      
-      for ev in v:
-        ev = clean_single_event(ev)
-        clean_cause_effect[k].add(ev) 
-
-    cause_effect = clean_cause_effect
-
-  print(len(events), len(cause_effect), len(event_loc))
-  return events, cause_effect, event_loc
-  
+'''
+COMPUTE EVENT SIMILARITY FOR CORRELATION CLUSTERING
+'''
 
 def train_load_embeddings(path, events=None):
+  
+  
   if os.path.isfile(path):
-    print('Loading embeddings ...')
+    print('Loading pre-trained embeddings ...')
     corpus_embeddings = np.load(path)
 
   else:
@@ -59,23 +27,103 @@ def train_load_embeddings(path, events=None):
   print(corpus_embeddings.shape)
   return corpus_embeddings
 
-# Load paraphrase detector model
+
 def load_transformer(usage):
-  if usage == 'pp':
+  if usage == 'phr':
+    # Load paraphrase detector model
     from transformers import AutoTokenizer, AutoModelForSequenceClassification
     tokenizer = AutoTokenizer.from_pretrained("coderpotter/adversarial-paraphrasing-detector")
     model = AutoModelForSequenceClassification.from_pretrained("coderpotter/adversarial-paraphrasing-detector")
     if torch.cuda.is_available():
       model.to('cuda')
   elif usage == 'nli': 
+    # Load NLI model
     from sentence_transformers import CrossEncoder
     model = CrossEncoder('cross-encoder/nli-roberta-base')
     tokenizer = None
   
   return model, tokenizer
 
-def extract_iou_pairs(events, threshold=0.4, 
-                      path='data/iou_pairs.txt'):
+
+def score_phr(batch, tokenizer, phr_model):
+  inputs = tokenizer(batch, padding=True, truncation=True)
+  for k, v in inputs.items():
+    inputs[k] = torch.Tensor(v).long()
+    if torch.cuda.is_available():
+      inputs[k] = inputs[k].to('cuda')
+      
+  scr = phr_model(**inputs).logits
+  scr = scr.detach().cpu().numpy()
+  del inputs
+  return scr
+
+def generate_input_batch(events, x, y_batch, usage):
+  input = []
+  for y in y_batch:
+    if usage == 'nli':
+      input.append((events[x], events[y]))
+    elif usage == 'phr':
+      s = events[x] + '. ' + events[y] + '.'
+      input.append(s)
+    else: 
+      raise ValueError('usage takes either "phr" or "nli"')  
+  return input
+  
+
+def pairwise_nli_phr(events, pairs, 
+                batch_size, usage,
+            
+                threshold=0.1, path = None):
+  '''
+  events    : list, of text events
+  pairs     : dict, key: list of neighbors (filterd by using other similarity metrics)
+  batch_size: int
+  usage     : str, either "phr" or "nli
+  threshold : min similarity score to write 
+  path      : str, saved file name
+  
+  output written into <path> file, each line is a tuple (1st-event-id, 2nd-event-id, similarity-score)
+  '''
+  if path is None:
+    path = f'data/{usage}_similarity.txt'
+
+  model, tokenizer = load_transformer(usage)
+  
+  N = len(events)
+  file = open(path, 'a+')
+  print('Start processing ...') 
+  for x in tqdm(range(N)):
+    if x in pairs:
+      nb = list(pairs[x]) 
+      for i in range(0, len(nb), batch_size):
+        y_batch = nb[i: i + batch_size]
+        input = generate_input_batch(events, x, y_batch, usage)
+        
+        if usage == 'nli':
+          scr = model.predict(input) 
+        elif usage == 'phr':
+          scr = score_phr(input, tokenizer, model)
+        else:
+          raise ValueError('usage takes either "phr" or "nli"')
+        
+        probs = scipy.special.softmax(scr,-1)[:, 1]
+        locations = np.where(probs > threshold)[0]
+        
+        for l in locations:
+          y = y_batch[l]
+          p = probs[l]
+          msg = (x, y, p)
+          file.write(str(msg) + '\n')
+
+        
+  file.close()
+  print(f'Output is written at {path}')
+
+
+
+def pairwise_iou(events, 
+                threshold=0.4, 
+                path='data/iou_similarity.txt'):
   
   import string
   def tokenizer(event):
@@ -92,81 +140,68 @@ def extract_iou_pairs(events, threshold=0.4,
     token_set = tokenizer(ev)
     tokens.append(token_set)
   
-  print('Extraction begins ...')
+  print('Start processing ...')
   file = open(path, 'a+')
   N = len(tokens)
-  for i in tqdm(range(N-1)):
-    ti = tokens[i]
-    if len(ti) > 0:
-      for j in range(i+1, N):
-        tj = tokens[j]      
-        if len(tj) > 0:
-          iou = len((ti & tj)) / len((ti | tj)) 
-          # print(iou)
+  for x in tqdm(range(N-1)):
+    tx = tokens[x]
+    if len(tx) > 0:
+      for y in range(x+1, N):
+        ty = tokens[y]      
+        if len(ty) > 0:
+          iou = len((tx & ty)) / len((tx | ty)) 
           if iou >= threshold:
-            msg = (i, j, iou)
+            msg = (x, y, iou)
             file.write(str(msg) + '\n')
     
   file.close()
+  print(f'Output is written at {path}')
 
+def weight_edges(db, alpha, beta, cause_effect_id, penalty = 0):
+    '''
+    generate edge weights for the adjacency matrix
+    db : dict of pairwise scores, for example (0, 1202) : {'pp': 0.80, 'iou' : 0.5, 'dist': 1.0} 
+    where pp is paraphrase likelihood, iou is IoU, dist is the Euclidean distance
+    '''
+    row = []
+    col = []
+    data = []
 
-def score_pp(batch, tokenizer, pp_model):
-  inputs = tokenizer(batch, padding=True, truncation=True)
-  for k, v in inputs.items():
-    inputs[k] = torch.Tensor(v).long()
-    if torch.cuda.is_available():
-      inputs[k] = inputs[k].to('cuda')
-      
-  scr = pp_model(**inputs).logits
-  scr = scr.detach().cpu().numpy()
-  del inputs
-  return scr
+    for k, v in tqdm(db.items()):
+        x, y = k
+    
+        if check_cause_effect(x, y, cause_effect_id):
+            s = penalty
+        else:
+            euclidean_sim = 1 / (1 + v['dist'])
+            s = alpha * v['pp'] + beta * v['iou'] + (1 - alpha - beta) * euclidean_sim
 
-def generate_input_batch(events, id_batch, method):
-  input = []
-  for y in id_batch:
-    if method == 'nli':
-      input.append((events[x], events[y]))
-    elif method == 'pp':
-      s = events[x] + '. ' + events[y] + '.'
-      input.append(s)
-  
-  return input
-  
-
-def score_pairs(events, pairs, batch_size, method,
-                model, tokenizer=None, threshold=0.1):
-
-  
-  
-  path = f'data/{method}_score.txt'
-  N = len(events)
-  file = open(path, 'a+')
-  print('Start processing ...') 
-  for x in tqdm(range(N)):
-    try:
-      v = pairs[x] 
-      n = len(v)
-      for j in range(0, n, batch_size):
-        batch = list(v)[j: j + batch_size]
-        input = generate_input_batch(events, batch, method)
+        row.append(x)
+        row.append(y)
         
-        if method == 'nli':
-          scr = model.predict(input) 
-        elif method == 'pp':
-          scr = score_pp(input, tokenizer, model)
+        col.append(y)
+        col.append(x)
         
-        probs = scipy.special.softmax(scr,-1)[:, 1]
-        locations = np.where(probs > threshold)[0]
-        
-        for l in locations:
-          y = batch[l]
-          p = probs[l]
-          msg = (x, y, p)
-          file.write(str(msg) + '\n')
+        data.append(s)
+        data.append(s)
 
-    except KeyError:
-      pass
-        
-  file.close()
+    row = np.array(row) 
+    col = np.array(col) 
+    data = np.array(data)
+    print(row.shape, col.shape, data.shape)
+    return row, col, data
 
+
+def check_cause_effect(x, y, cause_effect_id):
+    if cause_effect_id is None:
+        return False
+
+    if x in cause_effect_id:
+        if y in cause_effect_id[x]:
+          return True
+
+    if y in cause_effect_id:
+        if x in cause_effect_id[y]:
+          return True
+    
+    return False
