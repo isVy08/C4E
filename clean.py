@@ -12,7 +12,7 @@ def extract_object(clause):
         e.g., Someone_A sees Something_A (that Someone_A finds irresistible ) for sale --> someone_a sees something_a that someone_a finds irresistible for sale
     '''
     clause = re.sub(r'\(|\)', '', clause).strip()
-    raw_clause = re.sub(r' is | are | am | was | were | have been ', ' be ', clause)
+    raw_clause = re.sub(r' is | are | am | was | were | have been | has been ', ' be ', clause)
     content = nlp(clause)
     if 'that be' in raw_clause or 'which be' in raw_clause or 'who be' in raw_clause:
         obj = content[2:].text
