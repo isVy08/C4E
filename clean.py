@@ -21,7 +21,7 @@ def extract_object(clause):
         else:
             return obj, 'AP'
     else: 
-        if content[0].pos_ in ('NOUN', 'DET', 'PROPN') or content[0].text in ('where', 'when', 'who', 'which', 'that'): 
+        if content[0].pos_ in ('NOUN', 'DET', 'PROPN') and content[0].text not in ('where', 'when', 'who', 'which', 'that'): 
             return clause, 'NP'
         return clause, 'VP'
 
